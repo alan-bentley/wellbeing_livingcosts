@@ -1,0 +1,1561 @@
+---
+title: '**Diversity in New Zealand’s cost of living:** Insights from our Household living-costs price indexes (HLPIs)'
+author: "Paper presented at the 3rd International Conference on Wellbeing & Public Policy, Wellington, New Zealand, September 2018"
+date: "Alan Bentley, Senior Analyst, Stats NZ^[[Crown copyright.](https://www.stats.govt.nz/about-us/copyright/?url=/about_us/about-this-site/copyright-terms-of-use.aspx) Content is licensed under [Creative Commons Attribution 4.0 International.](https://creativecommons.org/licenses/by/4.0/) You are free to copy, distribute, and adapt, as long as you attribute the work to Stats NZ. The opinions, findings, recommendations, and conclusions expressed in this paper are those of the author. Source code to recreate the charts can be found at https://github.com/alan-bentley/wellbeing_livingcosts]"
+output:
+  pdf_document:
+fontsize: 11pt
+urlcolor: blue
+linkcolor: black
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message=F, warning=F, cache=F, dev='cairo_pdf')
+
+# Load some libraries
+library(tidyr) #For data manipulation
+library(ggplot2) #For charts
+library(scales) #For chart labels
+library(dplyr) #For data manipulation
+library(zoo) #For dates (dealing with quarters)
+library(stringr)
+
+# Custom ggplot (chart) theme
+theme_ab <- function(base_size = 10){
+  theme_minimal(base_size = base_size) %+replace%
+    theme(
+      plot.title = element_text(size=12),
+          axis.text = element_text(size=10),
+          strip.background = element_rect(fill="black"), 
+          strip.text = element_text (color="white", size=10, margin = margin(0,.5,0,.5, "cm")),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank())
+}
+
+theme_ab2 <- function(base_size = 10){
+  theme_minimal(base_size = base_size) %+replace%
+    theme(
+      plot.title = element_text(size=12),
+          axis.text = element_text(size=10),
+          strip.background = element_rect(fill="black"), 
+          strip.text = element_text (color="white", size=10, margin = margin(0,.5,0,.5, "cm")))
+}
+
+# Some Stats NZ colours
+pal1 <- c("#272726","#4d5b61","#ed7218")
+pal2b <- c("#172a45","#005c75","#00b2c3")
+pal2g <- c("#004d20","#007f39","#a2c62b")
+pal2r <- c("#702e01","#c04124","#d0cdbb")
+pal2 <- c(pal2b,pal2g,pal2r)
+pals <- c(pal1,pal2)
+
+# Load the data
+root <- "https://raw.githubusercontent.com/alan-bentley/wellbeing_livingcosts/master/data"
+
+facts <- read.csv(url("https://www.stats.govt.nz/assets/Uploads/Household-living-costs-price-indexes/Household-living-costs-price-indexes-March-2018-quarter/Download-data/household-living-costs-price-indexes-march-2018-quarter-group-facts-csv.csv"))
+facts$hlpi_name <- gsub("aori","\u0101ori", facts$hlpi_name) #add macron
+
+wgt <- read.csv(url("https://www.stats.govt.nz/assets/Uploads/Household-living-costs-price-indexes/Household-living-costs-price-indexes-June-2018/Download-data/household-living-costs-price-indexes-jun18qtr-expenditure-weights-corrected.csv"))
+wgt$hlpi_name <- gsub("aori","\u0101ori", wgt$hlpi_name) #add macron
+
+index <- read.csv(url("https://www.stats.govt.nz/assets/Uploads/Household-living-costs-price-indexes/Household-living-costs-price-indexes-September-2018-quarter/Download-data/household-living-costs-price-indexes-sep18qtr-time-series-indexes.csv")) %>%
+  filter(as.Date(as.yearqtr(quarter)) <= as.Date("2018-04-01"))
+index$hlpi_name <- gsub("aori","\u0101ori", index$hlpi_name) #add macron
+
+```
+
+***
+
+# Abstract
+
+This paper introduces the 10-year time series of our Household living-costs price indexes (HLPIs). Published quarterly since late 2016, these new official statistics track changes in the purchasing power of money experienced by different groups in our society. We report insights into the diversity of experiences of changes in living-costs. Reviewing household demographics, we show how inequality of home ownership has impacted material wellbeing, as a result of above average inflation increases in rent, property rates and household energy. We observe who did – and who did not – benefit from the dramatic mortgage interest rate cuts following the Global Financial Crisis. Health and lifestyle factors impact the distribution of experienced inflation for some groups, particularly the elderly. New analysis for this paper seeks to better measure changes in real disposable income across households. We deflate quintile level changes in median income by the democratically weighted HLPIs to provide enhanced statistics. 
+
+
+\newpage
+
+# Introduction
+
+Changes in the purchasing power of money are a critical component to understanding the evolution of material wellbeing. Yet, it’s easy to forget that inflation, as measured by the CPI (Consumers Price Index), is an average. It’s an aggregate statistic. This makes it well suited for use as a national barometer of inflation; such as, a macroeconomic indicator for monetary policy purposes. Yet, hidden behind all averages is a distribution. The distribution of inflation means that the CPI does not necessarily align well with inflation experienced by different groups in society.
+
+The *Report by the Commission on the Measurement of Economic Performance and Social Progress* (Stiglitz et al, 2009), which has been helping to shape the future development of wellbeing economic statistics internationally, highlighted the importance of understanding the distributional aspects of inflation. 
+
+> *A point of particular relevance from a welfare perspective is the question about whose price index is evaluated. ... Statistical agencies calculate the increase in prices by looking at the costs of an average bundle of goods. However, different people buy different bundles of goods ... these differences may have become more marked and people at the bottom of the income distribution may have seen real incomes fall by much more than those at the top of the income distribution.*
+
+Examining New Zealand data for differences in relative expenditure patterns between the 'poorest' 5th of households, compared with the 'richest' 5th, grouped by their total expenditure (expenditure quintiles 1 and 5), we can see (Figure 1) marked differences in the types of housing costs that are more reflective of typical spending for each group. Other major differences in spending patterns are likely to be related to available resources, with the lowest quintile typically spending more on items that may be thought of as necessities.
+
+### Figure 1
+
+```{r s1, fig.height=3.5}
+
+# 1.1 Subset expenditure weight data to 'subgroup' level for selected years (and tidy)
+
+group_weights2 <- subset (wgt, level=="subgroup" & year %in% c(2008,2011,2018)) %>%
+                mutate(nzhec_short = factor(nzhec_short, levels = unique(nzhec_short[order(-nzhec)])),
+                hlpi_name = factor(hlpi_name, levels = c( "Expenditure quintile 1 (low)",
+                                                          "Expenditure quintile 5 (high)",
+                                                          "Beneficiary",
+                                                          "Superannuitant")))
+
+# 1.2 Filter to top expenditure quintile
+
+expq5_weights <- group_weights2 %>%
+                  filter(hlpi=="expq5") %>%
+                  select(year,nzhec,weight) %>%
+                  rename(allwgt=weight)
+
+# 1.3 Calculate difference from top expenditure quintile
+
+group_weights3 <- left_join(group_weights2,expq5_weights) %>%
+                  mutate(diffall=weight-allwgt,
+                         diff_type=ifelse(diffall>=0,"'Poor' spend more","'Rich' spend more"),
+                         house=ifelse(nzhec %in% c(4.1, 4.4,4.5,11.4,13.1, 4.3),"Housing","Lifestyle"),
+                         point="All households") %>%
+                  filter(hlpi %in% c("expq1") & year=="2018", abs(diffall)>=1)
+
+# 1.4 Figure 1 - part 1: Plot housing-related expenditure
+
+w4ea <- ggplot(subset(group_weights3,house=="Housing"), aes(x=reorder(nzhec_short,abs(diffall)), y=diffall/100))+
+  geom_bar(stat="identity", colour="white", alpha=.8, position="dodge", aes(fill=diff_type))+
+  geom_text(data=subset(group_weights3, diff_type=="'Rich' spend more" & house=="Housing"), aes(y=diffall/100, label=paste0(diffall,"% ")), hjust="left", size=4, colour=pal1[1])+
+  geom_text(data=subset(group_weights3, diff_type=="'Poor' spend more" & house=="Housing"), aes(y=diffall/100, label=paste0(diffall,"% ")), colour="white", hjust="right", size=4)+
+  theme_ab()+
+  scale_colour_manual(values=c(pal1[1],pal1[3]), name="", guide = guide_legend(reverse=TRUE))+
+  scale_fill_manual(values=c(pal1[1],pal1[3]), name="", guide = guide_legend(reverse=TRUE))+
+  scale_shape_manual(values=1,name="")+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        panel.spacing.x = unit(2, "lines"))+
+  scale_y_continuous(labels=percent)+
+  labs(title="Diversity in spending patterns\n",
+       subtitle="Highest expenditure quintile compared with lowest",
+       y="----------------------------------------------------------------------------------------------------------------------")+
+  theme(legend.position = "top", legend.justification=c(0.18, 0))
+w4ea
+
+
+```
+
+```{r s1b, fig.height=5}
+
+# 1.5 Figure 1 - part 2: Plot lifestyle-related expenditure
+
+w4eb <- ggplot(subset(group_weights3,house=="Lifestyle"), aes(x=reorder(nzhec_short,abs(diffall)), y=diffall/100))+
+  geom_bar(stat="identity", colour="white", alpha=.8, position="dodge", aes(fill=diff_type))+
+  geom_text(data=subset(group_weights3, diff_type=="'Rich' spend more" & house=="Lifestyle"), aes(y=diffall/100, label=paste0(diffall,"% ")), hjust="left", size=4, colour=pal1[1])+
+  geom_text(data=subset(group_weights3, diff_type=="'Poor' spend more" & house=="Lifestyle"), aes(y=diffall/100, label=paste0(diffall,"% ")), colour="white", hjust="right", size=4)+
+  theme_ab()+
+  scale_colour_manual(values=c(pal1[1],pal1[3]), name="", guide = guide_legend(reverse=TRUE))+
+  scale_fill_manual(values=c(pal1[1],pal1[3]), name="", guide = guide_legend(reverse=TRUE))+
+  scale_shape_manual(values=1,name="")+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        panel.spacing.x = unit(2, "lines"))+
+  scale_y_continuous(labels=percent)+
+  labs(y="Percentage points difference in expenditure proportions",
+       caption="\nAs at 2018 Q1 \n\nSource: Stats NZ")+
+  theme(legend.position = "none", legend.justification=c(0.52, 0))
+w4eb
+```
+
+## The distribution of inflation
+
+Differences in households' spending patterns have resulted in material differences in their experience of inflation over the past decade. Since late 2016, new official statistics, Household living-costs price indexes (HLPIs) have provided greater insights into the inflation experienced by 13 different demographic groups:
+
+* beneficiaries
+* Māori
+* income quintiles (five groups)
+* expenditure quintiles (five groups)
+* superannuitants.
+
+We publish an all-households HLPI for comparison. The conceptual design of the HLPIs, and how this differs from the CPI is explained in Appendix A.
+
+Over the past decade, the largest difference in experiences of inflation has been between the highest and lowest spending households (expenditure quintiles) - the lowest expenditure quintile experienced nearly double the inflation of the highest (Figure 2).
+
+### Figure 2
+
+```{r s2, fig.height=4}
+
+# 2.1 Select top-level price indexes
+
+index_top_i <- subset(index,level=="All groups")
+
+# 2.2 Calculate annual and cumulative percent change
+
+index_topc <- index_top_i %>%
+              group_by(hlpi) %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100) %>%
+              select(Cumulative,Annual,hlpi_name,hlpi,quarter) %>%
+              gather(type,val,-c(hlpi_name,hlpi,quarter))
+
+# 2.3 Plot
+
+i2a <- ggplot(data = index_topc, aes(x=as.Date(as.yearqtr(quarter)), y=val, group=hlpi_name))+
+  facet_wrap(~type, scales = "free", ncol=2)+
+  geom_line(colour="grey", alpha=.5)+
+  geom_line(data=subset(index_topc, hlpi %in% c("expq1", "expq5")), aes(colour=hlpi_name), size=1)+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2011Q3" & hlpi=="expq1" & type=="Annual"), label="lowest spending quintile", size=3.5, hjust="left", nudge_y = 0, nudge_x = 50, check_overlap = TRUE, colour=pal1[3])+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2009Q4" & hlpi=="expq5" & type=="Annual"), label="highest spending quintile", size=3.5, hjust="left", nudge_y = -0.001, nudge_x = 60, check_overlap = TRUE, colour=pal1[1])+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2017Q2" & hlpi=="expq1" & type=="Cumulative"), label="expenditure 'poor'", size=3.5, hjust="right", nudge_y = 0.00,  check_overlap = TRUE, colour=pal1[3], angle=20, vjust=-1)+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2012Q4" & hlpi=="expq5" & type=="Cumulative"), label="expenditure 'rich'", size=3.5, hjust="left", nudge_y = -0.01, nudge_x = 60, check_overlap = TRUE, colour=pal1[1], angle=20, vjust=1)+
+  scale_colour_manual(values=c(pal1[3],pal1[1]), 
+                      labels=c("Lowest spending", "Highest spending"),
+                      name="Household expenditure group")+
+  labs(title="Lowest spending households typically experienced the highest inflation \n",
+       subtitle="By household group",
+       x="", y="",
+       caption="Highest and lowest spending quintiles highlighted; other groups shown in grey \n \nSource: Stats NZ")+
+  scale_x_date(date_labels="%Y", 
+               # date_breaks="2 year",
+               limits = c(as.Date("2008-01-01"),as.Date("2019-01-01")),
+               breaks=c(as.Date("2008-01-01"),as.Date("2013-01-01"),as.Date("2018-01-01")))+
+  theme_ab()+
+  theme(legend.position="none")+
+  guides(fill=guide_legend(ncol=1))+
+  scale_y_continuous(labels=percent_format(accuracy = 1))+
+  geom_text(data=subset(index_topc, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2" & hlpi %in% c("expq1", "expq5")),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, colour=hlpi_name, label=round(val*100,0)), size=3, hjust="left")
+
+i2a
+
+```
+
+## Diversity in components of inflation
+
+To understand how these differences arise we can look at the major components of household inflation -- that is, those with the largest expenditure weights. Shown in Figure 3, insurance (housing insurance is a major component of insurance overall) and energy prices (primarily electricity) have risen much faster than inflation overall. Interest payments have had deflation - that is, there has been an increase in purchasing power. Grocery food and private transport supplies (primarily petrol) have been quite volatile. Rent is the highest weighted subgroup for all-households, with prices rising slightly faster than inflation overall.
+
+### Figure 3
+
+
+```{r s3, fig.height=4.5}
+
+# 3.1 Select expenditure sub-group weights for all-households HLPIs
+
+wgt_sub <- wgt %>%
+            filter(level=="subgroup" & hlpi=="allhh" & year=="2018") %>%
+            select(nzhec_short,weight)
+
+# 3.2 Select expenditure subgroup price indexes for all-households HLPIs, merge with weights and tidy-up
+
+index_sub <- index %>%
+              filter(level=="subgroup" & hlpi=="allhh") %>%
+              right_join(wgt_sub) %>%
+               group_by(nzhec) %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100) %>%
+              select(Cumulative,Annual,nzhec_short,quarter,weight) %>%
+              gather(type,val,-c(nzhec,nzhec_short,quarter,weight))
+
+# 3.3 Select top-level price indexes, for all-households
+
+index_all <- index %>%
+              ungroup() %>%
+              filter(level=="All groups" & hlpi=="allhh") %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100,
+                     weight=1,
+                     nzhec_short="All groups",
+                     nzhec="A") %>%
+              select(Cumulative,Annual,nzhec,nzhec_short,quarter,weight) %>%
+              gather(type,val,-c(nzhec,nzhec_short,quarter,weight))
+
+# 3.4 Find subgroups with large weights (greater than 5 percent)
+
+index_big <-  index %>%
+              filter(level=="subgroup" & hlpi=="allhh") %>%
+              right_join(wgt_sub) %>%
+               group_by(nzhec) %>%
+              group_by(nzhec) %>%
+              summarise(maxchange=max(abs(change.a), na.rm=T),weight=sum(weight)/length(quarter)) %>%
+              filter(weight>=5)
+
+# 3.5 Filter price indexes to those with large weight
+
+index_big2 <- index_sub %>%
+              filter(nzhec %in% index_big$nzhec)
+
+# 3.6 Plot
+
+subindex2 <- ggplot(subset(index_sub, type=="Cumulative"))+
+  geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2"),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight, label=paste0(" ",round(val*100,0),"%")), size=3, hjust="left")+
+  geom_text(data=subset(index_all, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2"),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, label=paste0(" ",round(val*100,0),"%")), size=3, hjust="left", colour=pal1[3])+
+                     # geom_line(colour="grey",aes(x=as.Date(as.yearqtr(quarter)), y=val, group=nzhec_short, alpha=weight))+
+                    geom_line(data=subset(index_big2, type=="Cumulative"),aes(x=as.Date(as.yearqtr(quarter)), y=val, group=nzhec_short, linetype=nzhec_short, alpha=weight))+
+                    geom_line(data=subset(index_all, type=="Cumulative"),aes(x=as.Date(as.yearqtr(quarter)), y=val, group=nzhec_short, colour=nzhec_short),size=1)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2017Q2" &
+                                          nzhec_short=="Rent"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Rent", vjust = -.4, size=3, angle=10)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2017Q2" &
+                                          nzhec_short=="Insurance"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Insurance", vjust = -.8, hjust = .8,                         size=3, angle=20)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2015Q2" &
+                                          nzhec_short=="Household energy"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Electricity", vjust = -.7,                       size=3, angle=10)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2015Q4" &
+                                          nzhec_short=="Private transport supplies"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Petrol", size=3, hjust="right", nudge_y = -0.02, vjust = 1, angle=-40)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2013Q2" &
+                                          nzhec_short=="Interest"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Interest", vjust = -1, size=3, nudge_x = -100)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2016Q1" &
+                                          nzhec_short=="Grocery food"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Grocery food", vjust = 1, size=3, nudge_x = 0, nudge_y = -0.01, hjust="left")+
+                    geom_text(data=subset(index_all, type=="Cumulative" & as.yearqtr(quarter)=="2012Q4"), aes(x=as.Date(as.yearqtr(quarter)), y=val), label="All groups", vjust = 1, size=3, colour=pal1[3], nudge_y = -0.01, angle=10)+
+  theme_ab2()+
+  scale_colour_manual(values=c(pal1[3],pal2g,pal2r), name="")+
+  scale_linetype_manual(name="", values=c(1:3,5:7))+
+  scale_alpha_continuous(guide= FALSE, range=c(.4,1))+
+  scale_size_continuous(range=c(.1,2))+
+  labs(title="Housing and energy have been major drivers of inflation \n",
+       subtitle="Cumulative inflation over past decade",
+       x="", y="",
+      caption="\n6 highest weighted all-households HLPI subgroup indexes \n \nSource: Stats NZ")+
+  scale_y_continuous(labels=percent)+
+  scale_x_date(limits = c(as.Date("2008-01-01"),as.Date("2019-01-01")))+
+  theme(legend.position = "none", legend.key.width = unit(1.5,"cm"), axis.title.x = element_blank(), axis.text.y = element_blank(),
+        panel.grid.major.y = element_blank(), 
+          panel.grid.minor.y = element_blank(), panel.grid.major.x = element_line(size=.2), panel.grid.minor.x = element_line(size=.1))+
+  guides(linetype=guide_legend(ncol=2))
+
+subindex2
+
+```
+
+This gives us some clues as to the most important items that have had a large contribution to inflation overall. Yet, different household budgets lead to different purchasing habits and therefore the relative contribution of commodities to their overall experience of inflation.
+
+# Housing
+
+Chief amongst the differences in spending patterns is housing and housing-related costs. Inequality of home ownership (Figure 4) results in differences in relative expenditure on various housing costs (Figure 5).
+
+### Figure 4
+
+```{r s4, fig.height=3.5}
+
+# 4.1 Select home-ownership rates for some household groups
+
+facts_own <- facts %>%
+            filter(hlpi %in% c("allhh","expq1","expq5","super","benef") & year=="2018") %>%
+            mutate(hlpi_name = factor(hlpi_name, levels=c("Beneficiary",
+                                                          "Expenditure quintile 1 (low)",
+                                                          "All households",
+                                                          "Expenditure quintile 5 (high)",
+                                                          "Superannuitant")))
+
+facts_own_long <- facts_own %>%
+                  select(own_prop, own_wm_prop, hlpi, hlpi_name, year) %>%
+                  gather(stat_type, stat, -c(hlpi,hlpi_name,year))
+
+# 4.2 Plot
+
+ownplot <- ggplot(facts_own_long, aes(hlpi_name, stat/100))+
+          geom_bar(data=subset(facts_own_long, stat_type=="own_prop"), aes(fill=stat_type),stat="identity")+
+          geom_bar(data=subset(facts_own_long, stat_type=="own_wm_prop"), aes(fill=stat_type),stat="identity")+
+          geom_bar(data=subset(facts_own_long, stat_type=="own_prop" & hlpi=="allhh"), aes(fill=stat_type),stat="identity",colour=pal1[3],show.legend=FALSE)+
+          geom_bar(data=subset(facts_own_long, stat_type=="own_wm_prop" & hlpi=="allhh"), aes(fill=stat_type),stat="identity", colour=pal1[3],show.legend=FALSE)+
+          geom_text(data=subset(facts_own_long, stat_type=="own_wm_prop"), aes(label = paste0(round(stat,digits=0), "%")), size=4, colour=pal1[2], position = position_stack(vjust = 0.5))+
+          geom_text(data=subset(facts_own_long, stat_type=="own_prop"), aes(label = paste0(round(stat,digits=0), "%")), size=4, colour="black",nudge_y=0.05)+
+          coord_flip()+
+          labs(title="Home ownership rates vary across demographic groups \n",
+               subtitle="proportion of households who:",
+               y="",x="",
+               caption="Source: Stats NZ // Household Economic Survey, Year to June 2016")+
+          theme_ab()+
+          theme(legend.position = "top", axis.text.x = element_blank())+
+          scale_fill_manual(values=c(pal1[1],pal2r[3]),name="",
+                            labels=c("own_prop"="Own",
+                                     "own_wm_prop"="Own, with mortgage"))+
+          scale_y_continuous(labels = percent)+
+          guides(colour=FALSE)
+          
+ownplot
+
+
+```
+
+### Figure 5
+
+```{r s5, fig.height=4}
+
+# 5.1 Select housing cost expenditure weights for some household groups
+
+hlpi_rent <- select(subset(wgt, nzhec %in% c(4.1, 4.4,11.4,13.1, 4.5)), hlpi_name, year, weight, exp_pw, nzhec_short) %>%
+              subset(year %in% c("2018") & hlpi_name %in% c("Superannuitant","All households",
+                                                                "Beneficiary", "Expenditure quintile 1 (low)",
+                                                     "Expenditure quintile 5 (high)")) %>%
+              mutate(weight=weight/100,
+                     hlpi_name = factor(hlpi_name, levels=c("Beneficiary",
+                                                          "Expenditure quintile 1 (low)",
+                                                          "All households",
+                                                          "Expenditure quintile 5 (high)",
+                                                          "Superannuitant")))
+
+# 5.2 Do plot
+
+hlpi_rentPlot <- ggplot(hlpi_rent, aes(hlpi_name,weight, fill=nzhec_short)) +
+                  geom_bar(stat="identity", colour=pal1[1]) +
+                  geom_bar(data=subset(hlpi_rent, hlpi_name=="All households"), stat="identity", colour=pal1[3],show.legend=FALSE) +
+                  geom_text(data=subset(hlpi_rent, hlpi_name=="Beneficiary" & nzhec_short=="Rent"), aes(label = paste0(nzhec_short,", ",round(weight*100,digits=0), "%"), y=weight/2), size=4, colour=pal1[2])+
+                  geom_text(data=subset(hlpi_rent, hlpi_name=="Superannuitant" & nzhec_short=="Property rates"), aes(label = paste0(round(weight*100,digits=0), "%"), y=0.09), size=4, colour=pal1[1])+
+  geom_text(data=subset(hlpi_rent, hlpi_name=="Superannuitant" & nzhec_short=="Insurance"), aes(label = paste0(round(weight*100,digits=0), "%"), y=0.18), size=4, colour=pal1[1])+
+                  geom_text(data=subset(hlpi_rent, hlpi_name=="Expenditure quintile 5 (high)" & nzhec_short=="Interest" ), aes(label = paste0(round(weight*100,digits=0), "%"), y=0.13), size=4, colour="white")+
+                  geom_text(data=subset(hlpi_rent, hlpi_name=="Expenditure quintile 1 (low)" & nzhec_short=="Household energy"), aes(label = paste0(round(weight*100,digits=0), "%"), y=.37), size=4, colour="white")+
+                  scale_y_continuous(labels=percent_format(accuracy = 1))+
+                  # facet_grid(year~.)+
+                  coord_flip() +
+                  labs(title="Home ownership rates affect typical expenditure \n",
+                       y="proportion of expenditure", x="",
+                       caption="As at 2018 Q1 \n\nSource: Stats NZ")+
+                  theme_ab()+
+                  scale_fill_manual(values=c(pal1[1],"white",pal1[2],pal1[3],pal2r[3]), name="", guide = guide_legend(reverse=TRUE),
+                                    labels=rev(c("Rent","Property \nrates","Interest","Insurance","Household \nenergy")))+
+                  theme(legend.position = "bottom")
+                  
+hlpi_rentPlot
+
+```
+
+
+Rent, the biggest expense for many, has tracked slightly above inflation overall. For households who spent more than average on rent, all else equal, this led to their experience of inflation being greater than most.[^1] 
+
+[^1]: Recent research (Bentley, 2018) suggests that the impacts of rent price inflation shown in the HLPIs may reflect a smaller impact than reality. An improved model of inflation estimated greater rent inflation over the past 10 years.
+
+For homeowners, a large expense can be mortgage interest payments. Unlike the CPI, which aligns with inflation measurement for a monetary policy target, HLPIs track changes in the purchasing power of mortgage interest payments. In the HLPIs, changes in the purchasing power of mortgage interest are calculated as the combined effect of the changes in mortgage interest rates and property prices. Appendix A describes the methods in more detail.
+
+### Figure 6
+
+```{r s6, fig.height=3.5}
+
+# 6.1 Read and tidy Official Cash Rate (OCR) data (from https://www.rbnz.govt.nz/monetary-policy/official-cash-rate-decisions)
+
+ocr <- read.csv(url(paste0(root,"/OCR.csv"))) %>%
+  # read.csv("OCR.csv") %>%
+        mutate(date=as.Date(Date,"%d-%b-%y")) %>%
+        filter(date>=as.Date("01-Apr-08","%d-%b-%y")) %>%
+        arrange(date) %>%
+        mutate(index=OCR/OCR[1],
+               Cummulative=index-1,
+               series="Official cash rate") %>%
+        select(-OCR,-Change,-Date)
+
+# 6.2 Read and tidy CoreLogic house price index (from https://www.rbnz.govt.nz/-/media/ReserveBank/Files/Statistics/Key%20graphs/graphdata.xlsx?la=en)
+
+hpi <- read.csv(url(paste0(root,"/HPI.csv"))) %>%
+  # read.csv("HPI.csv") %>%
+          mutate(date=as.Date(paste0("01-",quarter),"%d-%b-%y")) %>%
+        filter(date>=as.Date("01-Apr-08","%d-%b-%y")) %>%
+        mutate(index=HPI/HPI[1],
+               Cummulative=index-1,
+               series="House price index") %>%
+        select(-HPI,-quarter)
+
+# 6.3 Merge series and tidy-up
+
+ocr_hpi <- rbind(ocr,hpi)
+
+index_interest <- index %>%
+              filter(level=="subgroup" & nzhec_short=="Interest" & hlpi=="allhh") %>%
+              select(quarter,index) %>%
+              mutate(date=as.Date(as.yearqtr(quarter)),
+                     index=index/index[1],
+                     Cummulative=index-1,
+                     series="Interest") %>%
+              select(-quarter)
+
+ocr_hpi2 <- rbind(ocr,hpi,index_interest)
+
+# 6.4 Read Gross Domestic Product (GDP) data (from https://www.stats.govt.nz/)
+
+gdp <- read.csv(url(paste0(root,"/GDP_P.csv"))) %>%
+  # read.csv("GDP_P.csv") %>%
+      mutate(date=as.Date(as.yearqtr(quarter))) %>%
+  filter(date>=as.Date("01-Apr-07","%d-%b-%y")) %>%
+        arrange(date) %>%
+        mutate(index=GDP/GDP[1],
+               Cummulative=index-1,
+              Annual=(index/lag(index,4))-1,
+               series="Gross Domestic Product",
+              growth=ifelse(Annual<0,"Recession","Growth")) %>%
+        select(-GDP,-quarter) %>%
+        filter(!is.na(Annual))
+
+# 6.5 Identify post global financial crisis recession
+
+recessions <- gdp %>%
+              group_by(growth) %>%
+              summarise(start=min(date),end=max(date)) %>%
+              filter(growth=="Recession")
+
+# 6.6 Plot
+
+ocr_plot4 <- ggplot(ocr_hpi2)+
+              geom_rect(data=recessions, aes(NULL, NULL, xmin = start-45, xmax=end+45, fill=growth), ymin=-Inf, ymax=Inf, alpha=.2)+
+            geom_line(aes(date,Cummulative,colour=series,linetype=series),size=1)+
+            theme_ab()+
+            scale_colour_manual(values=pal1, name="")+
+            scale_fill_manual(values=pal2r[2], name="")+
+            scale_linetype_discrete(name="")+
+            labs(title="Changes in the purchasing power of mortgage interest payments \n",
+                 subtitle="Cumulative change",
+                 x="",y="",
+                 caption="Source: RBNZ, CoreLogic, Stats NZ")+
+            scale_y_continuous(labels=percent, limits = c(-.8, .8), breaks=c(0,-.4,-.8,.4,.8))+
+  geom_text(data=subset(ocr_hpi2, series=="Official cash rate" & date=="2010-03-11"),
+                              aes(x=date, y=Cummulative,  colour=series), label="Official cash rate", size=3,vjust=-1, hjust="left",show.legend=FALSE,
+            nudge_y=.05)+
+  geom_text(data=subset(ocr_hpi2, series=="Interest" & as.yearqtr(date)=="2015Q2"),
+                              aes(x=date, y=Cummulative,  colour=series), label="HLPI, interest payments", size=3,vjust=-.3, hjust="left",show.legend=FALSE,
+            nudge_y=.07, nudge_x=-365)+
+  geom_text(data=subset(ocr_hpi2, series=="House price index" & as.yearqtr(date)=="2014Q2"),
+                              aes(x=date, y=Cummulative,  colour=series), label="House price index", size=3,vjust=-1, hjust="right",show.legend=FALSE)+
+   geom_text(data=subset(ocr_hpi2, series=="Official cash rate" & date=="2018-06-28"),
+                              aes(x=date, y=Cummulative, label=paste0(round(Cummulative*100,0),"%"), colour=series), size=3, hjust="left",show.legend=FALSE, nudge_x=50)+
+  geom_text(data=subset(ocr_hpi2, series=="House price index" & date=="2018-03-01"),
+                              aes(x=date, y=Cummulative, label=paste0(round(Cummulative*100,0),"%"), colour=series), size=3, hjust="left",show.legend=FALSE, nudge_x=50)+
+  geom_text(data=subset(ocr_hpi2, series=="Interest" & date=="2018-04-01"),
+                              aes(x=date, y=Cummulative, label=paste0(round(Cummulative*100,0),"%"), colour=series), size=3, hjust="left",show.legend=FALSE, nudge_x=50)+
+  geom_text(data=subset(ocr_hpi2, series=="House price index" & as.yearqtr(date)=="2009Q3"),
+                              aes(x=date, y=Cummulative,  colour=series), label="Post-GFC \nRecession", size=3,vjust=-1, hjust="right",show.legend=FALSE, nudge_y=0.2, nudge_x=-20)+
+  theme(legend.position = "none")
+
+ocr_plot4
+
+```
+
+Following the Global Financial Crisis (GFC), New Zealand experienced a 5-quarter recession between 2008Q3 -- 2009Q3 (inclusive). The Reserve Bank of New Zealand cut the Official Cash Rate (OCR) from 8.25% prior to 24 July 2008 to 2.5% on 30 April 2009 and to 1.75% since 10 Novemember 2016. These changes massively affected mortgage interest rates, albeit with a lag for fixed-rate mortgages. 
+
+Countering this decline has been an equally dramatic increase in house prices. For existing home owners this is largely an asset price, or wealth, effect -- so may be viewed in a positive light by some. But in terms of the purchasing power of mortgage interest payments, increasing house prices result in a decline in purchasing power as larger mortgage payments are required to obtain the same flow of housing services.
+
+The direct impact of the 2008-09 interest rate cuts was a large downwards contribution to inflation for home owners. This was somewhat reversed in 2014-16, with a temporary modest rise in the OCR and increasing house prices. The house price increases may not have felt like a decline in purchasing power for existing homeowners (prior to 2014), but would likely have been felt by first time buyers.
+
+Overall the aggregate purchasing power of mortgage interest payments are estimated to be at a similar level to a decade ago (Figure 6).
+
+### Figure 7
+
+```{r s7, fig.height=6}
+
+# 7. Calculate points contributions (these differ slightly from original version of paper, which used data held to a greater precision than the HLPI Open Data files)
+
+# 7.1 Create basket periods
+
+index2 <- index %>%
+          mutate(quarter=as.yearqtr(quarter),
+                 date=as.Date(quarter))
+
+basket08 <- index2 %>%
+            filter(date<=as.Date("2011-04-01")) %>%
+            mutate(basket=2008)
+
+basket11 <- index2 %>%
+            filter(date>=as.Date("2011-04-01") & date<=as.Date("2014-04-01")) %>%
+            mutate(basket=2011)
+
+basket14 <- index2 %>%
+            filter(date>=as.Date("2014-04-01") & date<=as.Date("2017-07-01")) %>%
+            mutate(basket=2014)
+
+basket17 <- index2 %>%
+            filter(date>=as.Date("2017-07-01") & date<=as.Date("2017-10-01")) %>%
+            mutate(basket=2017)
+
+basket18 <- index2 %>%
+            filter(date>=as.Date("2017-10-01")) %>%
+            mutate(basket=2018)
+
+# 7.2 Tidy weight data
+
+wgt2 <- wgt %>%
+        select(hlpi, year, nzhec, weight) %>%
+        rename(basket=year)
+
+# create top level weight=100
+wgt2_all <- wgt2 %>%
+        select(hlpi,basket) %>%
+        unique() %>%
+        mutate(nzhec="A",
+               weight=100)
+
+wgt3 <- rbind(wgt2, wgt2_all) %>%
+  mutate(nzhec=as.factor(nzhec))
+
+# 7.3 Create Laspeyres product totals (LPTs)
+
+# For 2008 basket
+
+index08 <- left_join(basket08,wgt3, by=c("hlpi","basket","nzhec")) %>%
+          group_by(hlpi,basket,nzhec) %>%
+          mutate(ratio = index/index[1],
+                 ratio = ifelse(is.na(ratio),1,ratio),
+                 LPT=weight*ratio)
+
+# For 2011 basket
+
+index11 <- left_join(basket11,wgt3, by=c("hlpi","basket","nzhec")) %>%
+  group_by(hlpi,basket,nzhec) %>%
+  mutate(ratio = index/index[1],
+         ratio = ifelse(is.na(ratio),1,ratio),
+         LPT=weight*ratio)
+
+# For 2014 basket
+
+index14 <- left_join(basket14,wgt3, by=c("hlpi","basket","nzhec")) %>%
+  group_by(hlpi,basket,nzhec) %>%
+  mutate(ratio = index/index[1],
+         ratio = ifelse(is.na(ratio),1,ratio),
+         LPT=weight*ratio)
+
+# For 2017 basket
+
+index17 <- left_join(basket17,wgt3, by=c("hlpi","basket","nzhec")) %>%
+  group_by(hlpi,basket,nzhec) %>%
+  mutate(ratio = index/index[1],
+         ratio = ifelse(is.na(ratio),1,ratio),
+         LPT=weight*ratio)
+
+# For 2018 basket
+
+index18 <- left_join(basket18,wgt3, by=c("hlpi","basket","nzhec")) %>%
+  group_by(hlpi,basket,nzhec) %>%
+  mutate(ratio = index/index[1],
+         ratio = ifelse(is.na(ratio),1,ratio),
+         LPT=weight*ratio)
+
+# 7.4 Calculate contributions
+
+# For 2008 basket
+
+con08 <- index08 %>%
+          mutate(LPTchange= LPT-lag(LPT,1)) %>% #Dollar change in LPT
+          group_by(hlpi, basket, level, quarter) %>%
+          mutate(topLPT= sum(LPT)) %>% #Top level LPT
+          group_by(hlpi, basket, nzhec) %>%
+          mutate(topLPTchange= topLPT-lag(topLPT,1), #Dollar change in top level LPT
+         topchange= (topLPT/lag(topLPT,1)-1)*100, #Percent change in top level LPT
+         LPTcon=LPTchange/topLPTchange, #Contribution of low-level to top level
+         conchange=LPTcon*topchange)  #LPT q change 
+
+# For 2011 basket
+
+con11 <- index11 %>%
+  mutate(LPTchange= LPT-lag(LPT,1)) %>% #Dollar change in LPT
+  group_by(hlpi, basket, level, quarter) %>%
+  mutate(topLPT= sum(LPT)) %>% #Top level LPT
+  group_by(hlpi, basket, nzhec) %>%
+  mutate(topLPTchange= topLPT-lag(topLPT,1), #Dollar change in top level LPT
+         topchange= (topLPT/lag(topLPT,1)-1)*100, #Percent change in top level LPT
+         LPTcon=LPTchange/topLPTchange, #Contribution of low-level to top level
+         conchange=LPTcon*topchange)  %>% #LPT q change
+  filter(!is.na(LPTchange)) #remove overlap quarter
+
+# For 2014 basket
+
+con14 <- index14 %>%
+  mutate(LPTchange= LPT-lag(LPT,1)) %>% #Dollar change in LPT
+  group_by(hlpi, basket, level, quarter) %>%
+  mutate(topLPT= sum(LPT)) %>% #Top level LPT
+  group_by(hlpi, basket, nzhec) %>%
+  mutate(topLPTchange= topLPT-lag(topLPT,1), #Dollar change in top level LPT
+         topchange= (topLPT/lag(topLPT,1)-1)*100, #Percent change in top level LPT
+         LPTcon=LPTchange/topLPTchange, #Contribution of low-level to top level
+         conchange=LPTcon*topchange)  %>% #LPT q change
+  filter(!is.na(LPTchange)) #remove overlap quarter
+
+# For 2017 basket
+
+con17 <- index17 %>%
+  mutate(LPTchange= LPT-lag(LPT,1)) %>% #Dollar change in LPT
+  group_by(hlpi, basket, level, quarter) %>%
+  mutate(topLPT= sum(LPT)) %>% #Top level LPT
+  group_by(hlpi, basket, nzhec) %>%
+  mutate(topLPTchange= topLPT-lag(topLPT,1), #Dollar change in top level LPT
+         topchange= (topLPT/lag(topLPT,1)-1)*100, #Percent change in top level LPT
+         LPTcon=LPTchange/topLPTchange, #Contribution of low-level to top level
+         conchange=LPTcon*topchange)  %>% #LPT q change
+  filter(!is.na(LPTchange)) #remove overlap quarter
+
+# For 2018 basket
+
+con18 <- index18 %>%
+  mutate(LPTchange= LPT-lag(LPT,1)) %>% #Dollar change in LPT
+  group_by(hlpi, basket, level, quarter) %>%
+  mutate(topLPT= sum(LPT)) %>% #Top level LPT
+  group_by(hlpi, basket, nzhec) %>%
+  mutate(topLPTchange= topLPT-lag(topLPT,1), #Dollar change in top level LPT
+         topchange= (topLPT/lag(topLPT,1)-1)*100, #Percent change in top level LPT
+         LPTcon=LPTchange/topLPTchange, #Contribution of low-level to top level
+         conchange=LPTcon*topchange)  %>% #LPT q change
+  filter(!is.na(LPTchange)) #remove overlap quarter
+
+contributions <- rbind(con08,con11,con14,con17,con18) %>%
+  group_by(hlpi, nzhec) %>%
+  mutate(conratio.q=(conchange/100)+1,
+         conratio.a=conratio.q*lag(conratio.q,1)*lag(conratio.q,2)*lag(conratio.q,3),
+         conchange.a=(conratio.a-1)*100, #contributions to annual change
+         conratio2.q=ifelse(is.na(conratio.q),1,conratio.q),
+         concumratio.q=cumprod(conratio2.q),
+          concumchange.q=(concumratio.q-1)*100, #contributions to cumulative change
+         conavechange.a=ifelse(is.na(conratio.q),NA,(concumratio.q ^ (1/(length(unique(quarter))/4))-1)*100)) #contributions to average change
+
+# 7.5 Select all households group
+contributions_allhh <- filter(contributions, hlpi=="allhh") %>%
+                        ungroup() %>%
+                        select(nzhec,quarter,conchange,conchange.a,concumchange.q,change.a,conavechange.a) %>%
+                        rename(conchange_all=conchange,
+                               conchange.a_all=conchange.a,
+                               concumchange.q_all=concumchange.q,
+                               change.a_all=change.a,
+                               conavechange.a_all=conavechange.a)
+
+# 7.6 Difference from all households
+
+contributions_diff_allhh <- left_join(contributions,contributions_allhh) %>%
+                            mutate(dif.conchange=conchange-conchange_all,
+                                   dif.conchange.a=conchange.a-conchange.a_all,
+                                  dif.concumchange.q=concumchange.q-concumchange.q_all,
+                                  dif.change.a=change.a-change.a_all,
+                                  dif.conavechange.a=conavechange.a-conavechange.a_all) %>%
+                            filter(!is.na(dif.conchange.a))
+
+# 7.7 Reasons for difference from all households
+# Subgroup level
+
+diff <- contributions_diff_allhh %>%
+  filter(level=="subgroup", hlpi %in% c("expq1","expq5"), !is.na(dif.conchange.a)) %>%
+  mutate(nzhec_name2=ifelse(nzhec==13.1,"Interest",ifelse(nzhec %in% c(4.1, 4.4,11.4, 4.5),"Housing costs","Other")),
+         hlpi_name = factor(ifelse(hlpi_name=="Expenditure quintile 1 (low)","Lowest expenditure group","Highest expenditure group"), levels=c("Lowest expenditure group","Highest expenditure group"))) 
+
+top_diff <- contributions_diff_allhh %>%
+  filter(level=="All groups", hlpi %in% c("expq1","expq5")
+         # , !is.na(dif.conchange.a)
+         ) %>%
+  select(date,hlpi_name,dif.change.a) %>%
+  mutate(t = "Total difference",
+         hlpi_name = factor(ifelse(hlpi_name=="Expenditure quintile 1 (low)","Lowest expenditure group","Highest expenditure group"), levels=c("Lowest expenditure group","Highest expenditure group"))) 
+
+# 7.8 Plot
+conPlot3 <- ggplot(diff, aes(date,dif.conchange.a/100))+
+  geom_bar(aes(fill=nzhec_name2), stat = "identity", alpha=.8)+
+  geom_line(data=top_diff, aes(date,dif.change.a/100), colour="white", size=1.5)+
+  geom_line(data=top_diff, aes(date,dif.change.a/100, colour=t), size=1)+
+  facet_wrap(~hlpi_name)+
+  labs(title="High spending households benefited most from interest rate cuts",
+       subtitle="Difference from all-households (annual inflation) \n",
+       x="",y="Points contribution",
+       caption="New Zealand household expenditure classification subgroup constributions
+       Interest payments (13.1) and Housing-related costs (4.1, 4.4, 4.5, and 11.4) highlighted
+       \nSource: Stats NZ")+
+  scale_fill_manual(
+    values=c("Housing costs"=pal1[1],
+             "Interest"=pal1[3],
+             "Other"=pal1[2]),
+    name="Contribution to \ndifference \n")+
+  scale_y_continuous(labels=percent_format(accuracy = 1))+
+  theme_minimal() +
+  theme(strip.background = element_rect(fill="#333333")) +
+  theme(strip.text = element_text (color="white"))+
+  scale_colour_manual(values=c("#333333"), name="")+
+  theme(legend.position="bottom")+
+  guides(fill=guide_legend(ncol=2))
+
+conPlot3
+
+```
+
+
+Since about half of all households in the highest expenditure quintile are mortgage payers, compared with 1 in 10 households in the lowest quintile, the higher spending households typically benefited more from the OCR cuts in 2008--09 (Figure 7).[^2]
+
+[^2]: It is noted that these direct impacts on inflation do not show how the dynamic economic impacts of monetary policy easing, such as support for the labour market, may have affected different household groups. Bunn et al. (2018) discuss the possible distributional impacts of monetary policy in the UK 2008--14. As far as we know, similar analysis has not been undertaken in New Zealand.
+
+\newpage
+
+Other housing-related costs explain much of the difference in inflation experience between the highest and lowest spending households (Figure 8).
+
+### Figure 8
+
+```{r s8, fig.height=4}
+
+# 8.1 Select housing cost contributions (difference from all-households, lowest expenditure quinitle)
+
+housing_diff <- diff %>%
+                filter(nzhec %in% c(4.1, 4.4,11.4, 4.5) & hlpi =="expq1") %>%
+                mutate(nzhec_short = factor(nzhec_short, level=c("Rent","Household energy",
+                                                                 "Insurance", "Property rates")))
+# 8.2 Plot
+housing_conPlot3 <- ggplot(housing_diff, aes(date,dif.conchange.a/100))+
+  geom_bar(aes(fill=nzhec_short), stat = "identity", alpha=.8, colour="black")+
+  facet_wrap(~hlpi_name)+
+  labs(title="Contribution of housing costs \n",
+       subtitle="Difference from all-households (annual inflation) \n",
+       x="",y="Points contribution",
+       caption="Contribution of other groups not shown
+       \nSource: Stats NZ")+
+  scale_fill_manual(
+    values=c("Rent"=pal2r[3],
+             "Property rates"=pal1[3],
+             "Insurance"="white",
+             "Household energy"=pal1[1]),
+    name="Contribution to \ndifference \n")+
+  scale_y_continuous(labels=percent_format(accuracy = .1))+
+  theme_minimal() +
+  theme(strip.background = element_rect(fill="#333333")) +
+  theme(strip.text = element_text (color="white"))+
+  scale_colour_manual(values=c("#333333"), name="")+
+  guides(fill=guide_legend(ncol=1))
+
+housing_conPlot3
+
+```
+
+
+# Health & lifestyle
+
+For different reasons, Superannuitants and Benficiaries have had greater than average inflation over the past decade (Figure 9).
+
+### Figure 9
+
+```{r s9, fig.height=3.5}
+
+# 9.1 Select top-level price indexes
+
+index_top_i <- subset(index,level=="All groups")
+
+# 9.2 Calculate annual and cumulative percent change
+
+index_topc <- index_top_i %>%
+              group_by(hlpi) %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100) %>%
+              select(Cumulative,Annual,hlpi_name,hlpi,quarter) %>%
+              gather(type,val,-c(hlpi_name,hlpi,quarter))
+
+# 9.3 Plot
+
+i2a <- ggplot(data = index_topc, aes(x=as.Date(as.yearqtr(quarter)), y=val, group=hlpi_name))+
+  facet_wrap(~type, scales = "free", ncol=2)+
+  geom_line(colour="grey", alpha=.5)+
+  geom_line(data=subset(index_topc, hlpi %in% c("super", "benef")), aes(colour=hlpi_name), size=1)+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2011Q3" & hlpi=="super" & type=="Annual"), label="Superannuitant", size=3.5, hjust="left", nudge_y = 0, nudge_x = 50, check_overlap = TRUE, colour=pal1[1])+
+  geom_text(data= subset(index_topc, as.yearqtr(quarter)=="2017Q4" & hlpi=="benef" & type=="Annual"), label="Beneficiary", size=3.5, hjust="right", nudge_y = 0.004, nudge_x = -100, check_overlap = TRUE, colour=pal1[3])+
+  scale_colour_manual(values=c(pal1[3],pal1[1]), 
+                      name="Household expenditure group")+
+  labs(title="Superannuitants and beneficiaries had greater than average inflation \n",
+       subtitle="By household group",
+       x="", y="",
+       caption="Superannuitants and beneficiaries highlighted; other groups shown in grey \n\nSource: Stats NZ")+
+  scale_x_date(date_labels="%Y", 
+               limits = c(as.Date("2008-01-01"),as.Date("2019-01-01")),
+               breaks=c(as.Date("2008-01-01"),as.Date("2013-01-01"),as.Date("2018-01-01")))+
+  theme_ab()+
+  theme(legend.position="none")+
+  guides(fill=guide_legend(ncol=1))+
+  scale_y_continuous(labels=percent_format(accuracy = 1))+
+  geom_text(data=subset(index_topc, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2" & hlpi %in% c("super", "benef")),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, colour=hlpi_name, label=round(val*100,0)), size=3, hjust="left")
+
+i2a
+
+```
+
+To help understand what else has contributed to different experiences of inflation, we can look at commodities that have had large price changes (Figure 10). Even small differences in spending patterns for these items can have an amplified impact.
+
+### Figure 10
+
+```{r s10, fig.height=3.5}
+
+# 10.1 Select expenditure sub-group weights for all-households HLPIs
+
+wgt_sub <- wgt %>%
+            filter(level=="subgroup" & hlpi=="allhh" & year=="2018") %>%
+            select(nzhec_short,weight)
+
+# 10.2 Select expenditure subgroup price indexes for all-households HLPIs, merge with weights and tidy-up
+
+index_sub <- index %>%
+              filter(level=="subgroup" & hlpi=="allhh") %>%
+              right_join(wgt_sub) %>%
+               group_by(nzhec) %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100) %>%
+              select(Cumulative,Annual,nzhec_short,quarter,weight) %>%
+              gather(type,val,-c(nzhec,nzhec_short,quarter,weight))
+
+# 10.3 Select top-level price indexes, for all-households
+
+index_all <- index %>%
+              ungroup() %>%
+              filter(level=="All groups" & hlpi=="allhh") %>%
+              mutate(Cumulative = (index/index[1])-1,
+                     Annual=change.a/100,
+                     weight=1,
+                     nzhec_short="All groups",
+                     nzhec="A") %>%
+              select(Cumulative,Annual,nzhec,nzhec_short,quarter,weight) %>%
+              gather(type,val,-c(nzhec,nzhec_short,quarter,weight))
+
+# 10.4 Find subgroups with large cumulative price change (greater than 5 percent)
+
+index_big_cum <-  index_sub %>%
+              filter(val >=.5|val <= -.5)
+
+# 10.5 Exclude insurance (as already shown in Figure 3)
+
+index_big2 <- index_sub %>%
+              filter(nzhec %in% index_big_cum$nzhec & nzhec_short !="Insurance")
+
+# 10.6 Plot
+
+subindex2 <- ggplot(subset(index_sub, type=="Cumulative"))+
+  geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2" & !(nzhec_short %in% c("Property rates", "Newspapers & books"))),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight, label=paste0(" ",round(val*100,0),"%")), size=3, hjust="left")+
+  geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2" & nzhec_short == "Property rates"),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight, label=paste0(" ",round(val*100,0),"%")), size=3, hjust="left", vjust=-.2)+
+  geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2" & nzhec_short == "Newspapers & books"),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight, label=paste0(" ",round(val*100,0),"%")), size=3, hjust="left", vjust=.7)+
+  geom_text(data=subset(index_all, type=="Cumulative" & as.yearqtr(quarter)=="2018Q2"),
+                              aes(x=as.Date(as.yearqtr(quarter)), y=val, label=round(val*100,0)), size=3, hjust="left", colour=pal1[3])+
+                    geom_line(data=subset(index_big2, type=="Cumulative"),aes(x=as.Date(as.yearqtr(quarter)), y=val, group=nzhec_short, linetype=nzhec_short, alpha=weight))+
+                    geom_line(data=subset(index_all, type=="Cumulative"),aes(x=as.Date(as.yearqtr(quarter)), y=val, group=nzhec_short, colour=nzhec_short),size=1)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2015Q3" &
+                                          nzhec_short=="Newspapers & books"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Newspapers", vjust = 1, hjust="left", size=2.5, nudge_y = -.015)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2017Q2" &
+                                          nzhec_short=="Property rates"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Property \nrates", vjust = -.2,  size=3)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2014Q2" &
+                                          nzhec_short=="Cigarettes and tobacco"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Cigarettes \nand \ntobacco", vjust = -.2,  hjust="right",                     size=3)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2014Q1" &
+                                          nzhec_short=="Audio-visual"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Audio-visual", size=3, hjust="left",  vjust = -.5)+
+                    geom_text(data=subset(index_big2, type=="Cumulative" & as.yearqtr(quarter)=="2013Q2" &
+                                          nzhec_short=="Telecommunication equip"), aes(x=as.Date(as.yearqtr(quarter)), y=val, alpha=weight), label="Smartphones", hjust="right", vjust = 1, size=3)+
+                    geom_text(data=subset(index_all, type=="Cumulative" & as.yearqtr(quarter)=="2012Q4"), aes(x=as.Date(as.yearqtr(quarter)), y=val), label="All groups", vjust = 1, size=3, colour=pal1[3], nudge_y = -.05)+
+  theme_ab2()+
+  scale_colour_manual(values=c(pal1[3],pal2g,pal2r), name="")+
+  scale_linetype_manual(name="", values=c(1:3,5:7))+
+  scale_alpha_continuous(guide= FALSE, range=c(.4,1))+
+  scale_size_continuous(range=c(.1,2))+
+  labs(title="Commodities with large price change \n", 
+       x="", y="",
+      caption="\n5 fastest moving all-households HLPI subgroup indexes, excluding insurance - shown in Figure 3 \n\nSource: Stats NZ")+
+  scale_y_continuous(labels=percent)+
+  scale_x_date(limits = c(as.Date("2008-01-01"),as.Date("2019-01-01")))+
+  theme(legend.position = "none", legend.key.width = unit(1.5,"cm"), axis.title.x = element_blank(), axis.text.y = element_blank(),
+        panel.grid.major.y = element_blank(), 
+          panel.grid.minor.y = element_blank(), panel.grid.major.x = element_line(size=.2), panel.grid.minor.x = element_line(size=.1))+
+  guides(linetype=guide_legend(ncol=2))
+
+subindex2
+
+```
+
+Deflation recorded for audio-visual and telecommunication equipment (principally smartphones) is largely due to technology-driven quality improvements. All else equal, these utility increases are reflected as price declines in a quality-adjusted price index to show 'pure' price change.
+
+Cigarettes and tobacco prices have increased a colossal 181%, since 2008. A packet of 25 cigarettes has gone from $12.90 in 2008Q2 to $35.19 in 2018Q2. This has been driven by excise increases which form part of initiatives to decrease consumption (see Ministry of Health, 2010 & Stats NZ, 2018).
+
+### Figure 11
+
+```{r s11, fig.height=6}
+
+# 11.1 Select housing cost and tobacco contributions (difference from all-households, lowest expenditure quinitle)
+
+benef_diff <- contributions_diff_allhh %>%
+                filter(level=="subgroup", hlpi =="benef", !is.na(dif.conchange.a), 
+                       nzhec %in% c(2.2, 4.1, 4.4,11.4, 4.5, 13.1)) %>%
+                mutate(nzhec_short = factor(nzhec_short, level=c("Rent","Cigarettes and tobacco",
+                                                                 "Household energy",
+                                                                 "Insurance", "Interest",
+                                                                 "Property rates")))
+# 11.2 Difference from all households
+
+benef_top_diff <- contributions_diff_allhh %>%
+  filter(level=="All groups", hlpi =="benef") %>%
+  select(date,hlpi_name,dif.change.a) %>%
+  mutate(t = "Total difference") 
+
+
+# 11.3 Plot
+benef_conPlot3 <- ggplot(benef_diff, aes(date,dif.conchange.a/100))+
+  geom_bar(aes(fill=nzhec_short), stat = "identity", alpha=.8, colour="black")+
+  geom_line(data=benef_top_diff, aes(date,dif.change.a/100), colour="white", size=1.5)+
+  geom_line(data=benef_top_diff, aes(date,dif.change.a/100, colour=t), size=1)+
+  facet_wrap(~hlpi_name)+
+  labs(title="Contribution of housing and smoking \n",
+       subtitle="Difference from all-households (annual inflation) \n",
+       x="",y="Points contribution",
+       caption="Contribution of other groups not shown
+       \nSource: Stats NZ")+
+  scale_fill_manual(
+    values=c("Rent"=pal2r[3],
+             "Cigarettes and tobacco"=pal2b[3],
+             "Interest"=pal1[2],
+             "Property rates"=pal1[3],
+             "Insurance"="white",
+             "Household energy"=pal1[1]),
+  name="Contribution to \ndifference \n")+
+  scale_y_continuous(labels=percent_format(accuracy = .1))+
+  theme_minimal() +
+  theme(strip.background = element_rect(fill="#333333")) +
+  theme(strip.text = element_text (color="white"))+
+  scale_colour_manual(values=c("#333333"), name="")+
+  guides(fill=guide_legend(ncol=1))
+
+benef_conPlot3
+
+```
+
+
+For Beneficiary households the impact of tobacco tax increases will typically have been felt more strongly, compared with all households (Figure 11). Rent price inflation also had a major contribution to the faster rate of inflation for Beneficiaries.
+
+### Figure 12
+
+```{r s12, fig.height=4}
+
+# 12.1 Select main contributions (difference from all-households, lowest expenditure quinitle)
+
+super_diff <- contributions_diff_allhh %>%
+                filter(level=="subgroup", hlpi =="super", !is.na(dif.conchange.a), 
+                       nzhec %in% c(2.2, 4.1, 4.4,11.4,13.1, 4.5, 6.2, 8.3, 9.5),
+                       date == max(unique(date))) 
+
+# 12.2 Plot
+
+super_conPlot3 <- ggplot(super_diff, aes(x=reorder(nzhec_short,dif.conavechange.a/100),dif.conavechange.a/100))+
+  geom_bar(aes(fill=nzhec_short), stat = "identity", alpha=.8)+
+  facet_wrap(~hlpi_name)+
+    labs(title="Health and lifestyle affect inflation for the elderly \n",
+       subtitle="Contribution to difference, 10 years to 2018 Q2",
+       y="Percentage points contribution to difference in average annual inflation, \ncompared with all-households",x="",
+       caption="Source: Stats NZ")+
+     scale_fill_manual(
+    values=c("Rent"=pal1[2],
+                             "Property rates"=pal1[2],
+             "Interest"=pal1[2],
+             "Other"=pal1[2],
+              "Insurance"=pal1[2],
+              "Household energy"=pal1[2],
+             "Cigarettes and tobacco"=pal1[2],
+             "Newspapers & books"=pal1[3],
+             "Out-patient services"=pal1[3],
+             "Telecommunication services"=pal1[3]))+
+  scale_y_continuous(labels=percent_format(accuracy = .1))+
+  theme_ab() +
+  theme(legend.position="none")+
+  theme(strip.background = element_rect(fill="#333333")) +
+  theme(strip.text = element_text (color="white"))+
+  scale_colour_manual(values=c("#333333"), name="")+
+  guides(fill=guide_legend(ncol=1))+
+  coord_flip()+
+  annotate("text", x = 5.5, y = .00125, label = "benefited less \nfrom new technology", size=4, colour=pal1[3])+
+  annotate("text", x = 2.5, y = .001, label = "health care costs \nhad bigger impact", size=4, colour=pal1[3])
+
+super_conPlot3
+
+```
+
+Home ownership costs, outside of mortgage interest payments, are a bigger proportion of Superannuitant's outgoings, so greater than average inflation for property rates and insurance had a more marked impact on their experience of inflation. Typically owning outright meant they did not feel the impact of rising rent prices, nor did they benefit from declining mortgage interest rates (Figure 12). Health and lifestyle factors saw greater than average contributions to inflation from out-patient services, telecommunication services and newspapers, books and stationery. More inflation from telecommunication services was largely due to higher-than-average relative expenditure on home telephone line rental, which has seen much less technology-driven price falls compared with most of these services.
+
+# Changes in real income
+
+One of the fundamental uses of price indexes, is as a deflator of nominal values to estimate inflation-adjusted, 'real' values. They are critical to understanding changes in 'real' income. Nominal incomes need to rise faster than the purchasing power of money to have a positive impact on material wellbeing.
+
+Looking at the distribution of income, in nominal terms, we can see that inequity has persisted over the recent past. Median equivalised disposable income has been increasing, whilst the distribution has been widening (Figure 13). 
+
+### Figure 13
+
+```{r s13, fig.height=4}
+
+# 13.1 Select disposable income by quintile
+
+f <- facts %>%
+      filter(hlpi %in% c("disq1","disq2","disq3","disq4","disq5") & year!="2017" & year!="2008") %>%
+        mutate(flow="Disposable income \nquintile", quintile=gsub("Income quintile ","",hlpi_name)) %>%
+        mutate(year=ifelse(year==2008,"2007",ifelse(year==2011,"2010",ifelse(year==2014,"2013","2016")))) 
+
+# 13.2 Plot
+
+f3 <- ggplot(data=f)+
+            geom_hline(data=subset(f, quintile %in% c("1 (low)", "5 (high)")), aes(x=as.character(year),yintercept=eqv_income/365*7, linetype=quintile), colour=pal1[2], alpha=.5, show.legend=FALSE)+
+            geom_violin(aes(x=as.character(year),y=eqv_income/365*7), scale="area", fill=pal1[3], colour="white", alpha=.8)+
+            geom_point(aes(x=as.character(year),y=eqv_income/365*7, shape=quintile), size=3, colour=pal1[2])+
+            labs(title="Typical household income is rising, \nand the distribution is widening \n",
+                 subtitle="Nominal weekly disposable income, per 'equivalised' person",
+                 x="HES Year", y="",
+                 caption="Violin plot of distribution, based on quintile medians \n HES interviews run for year to June, income relates to previous 12 months \n Source: Stats NZ")+
+            theme_ab()+
+            scale_shape_manual(values=c(16,10,1,13,8), name="Median by quintile", guide = guide_legend(reverse=TRUE))+
+            scale_y_continuous(labels=dollar, breaks=c(300,600,900,1200,1500))
+
+f3
+
+```
+
+So far we have focused on spending (or expenditure) quintiles as studies suggest total household expenditure may be a better way to
+classify households with lower economic standard of living than using household
+income – if the ultimate aim of the classification is to proxy economic standard of
+living (see OECD, 2013). Total expenditure may be preferable because households
+may fund some of their expenditure by decreasing their assets or increasing their
+liabilities.
+
+Income quintile HLPIs display similar, albeit slightly more muted, differences in spending patterns and therefore experiences of inflation (Figure 14). Switching focus to income quintiles aligns the group definitions with trends in income. We
+use disposable (or net) income – that is, income available after income tax. This
+represents what is available to spend on consumption (or for savings). Converting the quarterly HLPIs to align with HES years, we can express these as the decline in purchasing power of money between surveys.
+
+
+### Figure 14
+
+```{r s14, fig.height=3}
+
+# 14.1 HES income relates to past quarters with the following weights
+
+w <- c(0.03125,	0.09375,	0.15625,	0.21875,	0.21875,	0.15625,	0.09375,	0.03125)
+
+# 14.2 Select income and expenditure qunitile top-level HLPIs (and create quintile-type label)
+
+pi1a <- index %>%
+      filter(hlpi %in% c("disq1","disq2","disq3","disq4","disq5") & level=="All groups") %>%
+      mutate(flow="Disposable income \nquintile", quintile=gsub("Income ","",hlpi_name))
+
+pi1b <- index %>%
+      filter(hlpi %in% c("expq1","expq2","expq3","expq4","expq5") & level=="All groups") %>%
+      mutate(flow="Expenditure \nquintile", quintile=gsub("Expenditure ","",hlpi_name))
+
+# 14.3 Calculate change in weighted average price levels between HES years, and plot
+
+pi2w <- rbind(pi1a,pi1b) %>%
+  mutate(year=ifelse(quarter %in% c("2008Q3","2008Q4","2009Q1","2009Q2","2009Q3","2009Q4","2010Q1","2010Q2"),"2010",
+                     ifelse(quarter %in% c("2011Q3","2011Q4","2012Q1","2012Q2","2012Q3","2012Q4","2013Q1","2013Q2"),"2013",
+                            ifelse(quarter %in% c("2014Q3","2014Q4","2015Q1","2015Q2","2015Q3","2015Q4","2016Q1","2016Q2"),"2016",NA)))) %>%
+  group_by(hlpi,year) %>%
+  mutate(index_ya=ifelse(is.na(year),NA,weighted.mean(index,w=w))) %>%
+  filter(!is.na(year)) %>%
+  group_by(hlpi) %>%
+  mutate(index_ya=index_ya/index_ya[1]*1000) %>%
+    ggplot(aes(x=as.character(year),y=(1/index_ya)*1000,group=hlpi_name))+
+  geom_line(aes(linetype=quintile,colour=quintile))+
+  facet_wrap(~flow)+
+  theme_ab()+
+  scale_colour_manual(values=pals,
+                      labels=c("quintile 1 (low)"="1 (low)",
+                               "quintile 2"= "2",
+                               "quintile 3"= "3",
+                               "quintile 4"= "4",
+                               "quintile 5 (high)"= "5 (high)"))+
+  scale_linetype_manual(values=c(1:5),
+                      labels=c("quintile 1 (low)"="1 (low)",
+                               "quintile 2"= "2",
+                               "quintile 3"= "3",
+                               "quintile 4"= "4",
+                               "quintile 5 (high)"= "5 (high)"))+
+  labs(title="Decline in purchasing power of money \n",
+       subtitle="Household living-cost price index, HES 2010 = 1000",
+       x="Household Economic Survey (HES) Year",y="",
+       caption="HES interviews run for year to June, income relates to previous 12 months \n 
+       Source: Stats NZ")
+
+pi2w
+
+```
+
+Over the 6-years to 2016, nominal income increased at a slightly faster pace for the highest income quintile compared with the lowest -- 26% increase for the highest, compared with 22% for the lowest income quintile (Figure 15). Using the same deflator for each quintile (the CPI or all-households HLPI) the difference in growth rates, between low and high income quintiles, is broadly unchanged -- the difference in growth rates remains at about 4 percentage points.
+
+
+### Figure 15
+
+```{r s15, fig.height=4}
+
+# 15.1 Select income data
+
+i1a <- facts %>%
+      filter(hlpi %in% c("disq1","disq2","disq3","disq4","disq5") & year!="2017") %>%
+      mutate(flow="Disposable income \nquintile", quintile=gsub("Income ","",hlpi_name))
+
+i1b <- facts %>%
+      filter(hlpi %in% c("expq1","expq2","expq3","expq4","expq5") & year!="2017") %>%
+      mutate(flow="Expenditure \nquintile", quintile=gsub("Expenditure ","",hlpi_name))
+
+i1c <- facts %>%
+      filter(hlpi %in% c("super","benef","maori","allhh") & year!="2017") %>%
+      mutate(flow="Other group", quintile="all")
+
+i1 <- rbind(i1a,i1b,i1c) %>%
+  mutate(year=ifelse(year==2008,"2007",ifelse(year==2011,"2010",ifelse(year==2014,"2013","2016")))) 
+
+# 15.2 Calculate 3-yearly change in income
+
+i2 <- i1 %>%
+  filter(year!="2007") %>%
+  select(hlpi_name,hlpi,flow,quintile,year, income, expenditure, eqv_income, eqv_exp) %>%
+  group_by(hlpi) %>%
+  mutate(y3c_income=income/lag(income,1), y3c_income=ifelse(is.na(y3c_income),1,y3c_income),
+         y3c_expenditure=expenditure/lag(expenditure,1), y3c_expenditure=ifelse(is.na(y3c_expenditure),1,y3c_expenditure),
+         y3c_eqv_income=eqv_income/lag(eqv_income,1), y3c_eqv_income=ifelse(is.na(y3c_eqv_income),1,y3c_eqv_income),
+         y3c_eqv_exp=eqv_exp/lag(eqv_exp,1), y3c_eqv_exp=ifelse(is.na(y3c_eqv_exp),1,y3c_eqv_exp))
+
+# 15.3 Select top-level price indexes
+
+pi1a <- index %>%
+      filter(hlpi %in% c("disq1","disq2","disq3","disq4","disq5") & level=="All groups") %>%
+      mutate(flow="Disposable income \nquintile", quintile=gsub("Income ","",hlpi_name))
+
+pi1b <- index %>%
+      filter(hlpi %in% c("expq1","expq2","expq3","expq4","expq5") & level=="All groups") %>%
+      mutate(flow="Expenditure \nquintile", quintile=gsub("Expenditure ","",hlpi_name))
+
+pi1c <- index %>%
+      filter(hlpi %in% c("super","benef","maori","allhh") & level=="All groups") %>%
+      mutate(flow="Other group", quintile="all")
+
+# 15.4 3-yearly change in prices, using HLPIs
+
+pi3 <- rbind(pi1a,pi1b,pi1c) %>%
+  mutate(year=ifelse(quarter %in% c("2008Q3","2008Q4","2009Q1","2009Q2","2009Q3","2009Q4","2010Q1","2010Q2"),"2010",
+                     ifelse(quarter %in% c("2011Q3","2011Q4","2012Q1","2012Q2","2012Q3","2012Q4","2013Q1","2013Q2"),"2013",
+                            ifelse(quarter %in% c("2014Q3","2014Q4","2015Q1","2015Q2","2015Q3","2015Q4","2016Q1","2016Q2"),"2016",NA)))) %>%
+  group_by(hlpi,year) %>%
+  mutate(index_ya=ifelse(is.na(year),NA,weighted.mean(index,w=w))) %>%
+  filter(!is.na(year), quarter %in% c("2010Q2","2013Q2","2016Q2")) %>%
+  group_by(hlpi) %>%
+  mutate(y3c=index_ya/lag(index_ya,1)) %>%
+  select(hlpi_name,hlpi,flow,quintile,year, y3c, index_ya) %>%
+  mutate(y3c=ifelse(is.na(y3c),1,y3c))
+
+pi3_all <- pi3 %>%
+          filter(hlpi=="allhh") %>%
+          ungroup() %>%
+          # rename(y3c_all=y3c) %>%
+          select(y3c,year,index_ya)
+
+# 15.5 3-yearly change in CPI prices
+
+cpi3yc <- read.csv(url("http://archive.stats.govt.nz/~/media/BAE8BFA3B1D64455BD23B64C536B809B.ashx")) %>%
+            subset(Level=="All groups") %>%
+            select(Quarter,Index.number) %>%
+            rename(quarter=Quarter, index=Index.number) %>%
+            mutate(year=ifelse(quarter %in% c("2008Q3","2008Q4","2009Q1","2009Q2","2009Q3","2009Q4","2010Q1","2010Q2"),"2010",
+                     ifelse(quarter %in% c("2011Q3","2011Q4","2012Q1","2012Q2","2012Q3","2012Q4","2013Q1","2013Q2"),"2013",
+                            ifelse(quarter %in% c("2014Q3","2014Q4","2015Q1","2015Q2","2015Q3","2015Q4","2016Q1","2016Q2"),"2016",NA)))) %>%
+            group_by(year) %>%
+  mutate(index_ya=ifelse(is.na(year),NA,weighted.mean(index,w=w))) %>%
+  filter(!is.na(year), as.factor(quarter) %in% c("2010Q2","2013Q2","2016Q2")) %>%
+  select(year,index_ya)
+
+# 15.6 Real income changes
+
+# Deflated by HLPI quintile
+
+pi3c <- left_join(i2,pi3) %>%
+        group_by(hlpi) %>%
+  mutate(income=income/(index_ya/index_ya[year=="2010"]),
+               expenditure=expenditure/(index_ya/index_ya[year=="2010"]),
+               eqv_income=eqv_income/(index_ya/index_ya[year=="2010"]),
+               eqv_exp=eqv_exp/(index_ya/index_ya[year=="2010"])) %>%
+        mutate(type="Real, deflated using HLPIs quintiles") %>%
+        filter(quintile!="all")
+
+# Deflated by all households HLPI
+
+pi3c_all <- left_join(i2,pi3_all, by="year") %>%
+        group_by(hlpi) %>%
+  mutate(income=income/(index_ya/index_ya[year=="2010"]),
+               expenditure=expenditure/(index_ya/index_ya[year=="2010"]),
+               eqv_income=eqv_income/(index_ya/index_ya[year=="2010"]),
+               eqv_exp=eqv_exp/(index_ya/index_ya[year=="2010"])) %>%
+        mutate(type="Real, deflated using all households HLPI") %>%
+        filter(quintile!="all")
+
+# Deflated by CPI
+
+pi3c_cpi <- left_join(i2,cpi3yc) %>%
+  mutate(income=income/(index_ya/index_ya[year=="2010"]),
+               expenditure=expenditure/(index_ya/index_ya[year=="2010"]),
+               eqv_income=eqv_income/(index_ya/index_ya[year=="2010"]),
+               eqv_exp=eqv_exp/(index_ya/index_ya[year=="2010"])) %>%
+        mutate(type="Real, deflated using CPI") %>%
+        filter(quintile!="all")
+
+# Nominal
+
+i3 <- i2 %>%
+  mutate(type="Nominal") %>%
+        filter(quintile!="all")
+
+# 15.7 Combine and tidy data
+
+pi3c_combo <- rbind(pi3c,pi3c_all, i3, pi3c_cpi) %>%
+              filter(flow=="Disposable income \nquintile")
+
+pi3c_combo2 <- pi3c_combo %>%
+              filter(type=="Real, deflated using all households HLPI") %>%
+              select(-type) %>%
+              filter(flow=="Disposable income \nquintile")
+
+pi3c_combo3 <- pi3c_combo %>%
+              filter(type!="Real, deflated using all households HLPI" & year !="2013")
+
+pi3c_combo4 <- pi3c_combo %>%
+              group_by(hlpi,type) %>%
+              mutate(income_index=income/income[year=="2010"],
+               expenditure_index=expenditure/expenditure[year=="2010"],
+               eqv_income_index=eqv_income/eqv_income[year=="2010"],
+               eqv_exp_index=eqv_exp/eqv_exp[year=="2010"]) %>%
+  ungroup() %>%
+  mutate(real=ifelse(type=="Nominal","Nominal","Real"),
+         type=gsub("Real, ","",type),
+         type=factor(type, levels=rev(c("Nominal","deflated using CPI","deflated using all households HLPI","deflated using HLPIs quintiles")))) 
+
+pi3c_combo5 <- pi3c_combo4 %>%
+                filter(hlpi %in% c("disq1","disq5")) %>%
+  filter(year =="2016")
+
+pi3c_combo5b <- pi3c_combo5 %>%
+                ungroup() %>%
+                select(eqv_income_index,year,quintile, type) %>%
+                spread(quintile,eqv_income_index) %>%
+                filter(year =="2016")  %>%
+  mutate(real=ifelse(type=="Nominal","Nominal","Real"))
+
+names(pi3c_combo5b) <- c("year","type","low","high","real")
+
+# 15.8 Plot
+
+pi3c_plot4 <- ggplot(pi3c_combo5, aes(x=as.factor(type)))+
+  geom_text(data=subset(pi3c_combo5, quintile=="quintile 1 (low)" & year=="2016"), aes(y=eqv_income_index-1, label=paste0(round((eqv_income_index-1)*100,0),"%"), colour=quintile), size=4, hjust="right", nudge_y=-.01, show.legend=F)+
+  geom_text(data=subset(pi3c_combo5, quintile=="quintile 5 (high)" & year=="2016"), aes(y=eqv_income_index-1, label=paste0(round((eqv_income_index-1)*100,0),"%"), colour=quintile), size=4, hjust="left", nudge_y=.01, show.legend=F)+
+  geom_point(aes(y=eqv_income_index-1, colour=quintile), size=3)+
+  geom_linerange(data=pi3c_combo5b, aes(ymin = low-1, ymax = high-1), alpha=.8, linetype="dotted", size=1)+
+  facet_grid(real~., scales = "free", switch="y")+
+  theme_ab()+
+  scale_shape_manual(values=c(1,16),name="")+
+  scale_colour_manual(values=c(pal1[2:3],pal2),name="")+
+  labs(title="Choice of price deflator matters \n",
+       subtitle="Growth in real disposable income, 2010-2016 (HES year)",
+       x="",y="",
+       caption="Source: Stats NZ") +
+  theme(legend.position = "top", strip.text.y = element_text(angle = 180), axis.text.x=element_blank())+
+  scale_y_continuous(label=percent, limits=c(0,.3))+
+  scale_x_discrete(position="top")+
+  coord_flip()
+
+pi3c_plot4
+
+
+```
+
+Aitken & Weale (2018) note 
+
+> *If the prices of goods bought disproportionately by the poor increase in price faster than those bought disproportionately by the rich, then even if the nominal distribution is unchanged, inequality can be said to have increased*
+
+Following this logic and applying the differential declines in the purchasing power of money, we can observe a greater difference in the growth rates of real income for low and high income households. The difference in growth rates is now 8 percentage points. In dollar terms (Figure 16), weekly real disposable income per 'equivalised' person increased by $23 for the lowest income quintile, compared with $191 for the highest income quintile. 
+
+### Figure 16
+
+```{r s16, fig.height=4}
+
+# 16.1 Select nominal and HLPI-deflated real changes
+
+pi3c_combo6 <- pi3c_combo %>%
+                filter(type %in% c("Nominal","Real, deflated using HLPIs quintiles"))
+
+# 16.2 Plot
+
+pi3c_plot2 <- ggplot(pi3c_combo6, aes(x=as.character(year),y=eqv_income/365*7))+
+  geom_violin(scale="area", aes(fill=type), alpha=.8)+
+  geom_hline(data=subset(pi3c_combo6, quintile %in% c("quintile 1 (low)", "quintile 5 (high)") & type=="Real, deflated using HLPIs quintiles"), aes(x=as.character(year),yintercept=eqv_income/365*7, linetype=quintile), colour=pal1[2], alpha=.5, show.legend=FALSE)+
+  theme_ab()+
+  scale_fill_manual(values=c("white",pal1[3],pal2r[2]), name="")+
+  labs(title="Growth in real disposable income: \n the distribution is widening \n",
+       subtitle="Weekly disposable income, per 'equivalised' person",
+       x="Household economic survey (HES) Year",y="",
+       caption="Source: Stats NZ") +
+  theme(legend.position = "bottom")+
+  guides(fill=guide_legend(ncol=2))+
+  scale_y_continuous(labels=dollar, breaks=c(300,600,900,1200,1500))
+
+pi3c_plot2
+```
+
+#Concluding remarks
+
+Differences in household resources (income and wealth), along with health and lifestyle factors, give rise to observed differences in spending habits between households. Combined with different inflation rates for some commodities, this has led to different experiences of inflation. Household living-costs price indexes have shed new light to help understand how these differences are typically experienced by different groups in our society. 
+
+We have observed that much of the diversity is housing-related -- rent, rates, interest, insurance and household energy -- which stem from inequality in home-ownership rates. Health and lifestyle factors affect the distribution for some households. Policy-driven tax escalation on cigarettes and tobacco would have been felt more acutely by those who continue to consume these products. Benefits from technology-driven quality improvements for audio-visual equipment and some telecommunication services - which, all else equal, are measured as increases in the purchasing power of money (or deflation) - are accrued more by those who value and consume these products in greater amounts. Superannuitants typically have different expenditure patterns in this regard - they typically spend less on audio-visual equipment and broadband services, and more on newspapers, books and stationery, and home telephone line rental.
+
+Given the different rates of inflation for low income/spending households, compared with high income/spending households, we have analysed the impacts on the distribution of real disposable income. Using quintile-specific deflators we can observe the regressive effect of diversity in living-cost price increases.
+
+#References
+
+Aitken, A, and Weale, M (2018). [A Democratic Measure of Household Income Growth: Theory and Application to the United Kingdom](https://www.ed.ac.uk/files/atoms/files/democratic_income_14feb18.pdf) Economic Statistics Centre of Excellence Discussion Paper 2018-02
+
+Bentley, A (2014). Special consumer price indices for particular groups of households. In Forbes, S, & Victorio, A (Eds) The New Zealand CPI at 100: History and interpretation. Wellington: Victoria University Press.
+
+Bentley, A (2015). [New measures of inflation for groups of households.](http://archive.stats.govt.nz/methods/research-papers/nzae/nzae-2015/new-measures-of-inflation.aspx) Paper presented at New Zealand Association of Economists conference, Wellington, New Zealand. 
+
+Bentley, A (2016). [Household-group inflation: methods to combine expenditure patterns.](https://www.unece.org/fileadmin/DAM/stats/documents/ece/ces/ge.22/2016/Session_3_New_Zealand__household-group_inflation.pdf) Paper presented at the Meeting of the Group of Experts on Consumer Price Indices, Geneva, Switzerland.
+
+Bentley, A (2018). [Rentals for housing: A model-based estimator of inflation from administrative data](https://storage.googleapis.com/wzukusers/user-30969499/documents/5b4bd4fe800d1eaS27gO/NZAE_Bentley2018.pdf)
+Paper presented at the New Zealand Association of Economists (NZAE) conference, Auckland, New Zealand, June 2018
+
+Bunn, P, Pugh, A and Yeates, C (2018). [The distributional impact of monetary policy easing in the UK between 2008 and 2014](https://www.bankofengland.co.uk/-/media/boe/files/working-paper/2018/the-distributional-impact-of-monetary-policy-easing-in-the-uk-between-2008-and-2014.pdf) Bank of England Staff Working Paper No. 720
+
+Ministry of Health (2010). [Excise on Tobacco: Proposed Changes](https://www.health.govt.nz/about-ministry/legislation-and-regulation/regulatory-impact-statements/excise-tobacco-proposed-changes)
+
+New Zealand Government (1915). Report on the cost of living in New Zealand, 1891–1914. Nov 1915. Wellington: Government Printer.
+
+Organisation for Economic Co-operation and Development (2013). [OECD framework for statistics on the distribution of household income, consumption and wealth.](https://www.oecd-ilibrary.org/economics/framework-for-statistics-on-the-distribution-of-household-income-consumption-and-wealth_9789264194830-en) 
+
+Stats NZ (2018). [Excise duty increase for cigarettes and tobacco](https://www.stats.govt.nz/methods/excise-duty-increase-for-cigarettes-and-tobacco)
+
+Stats NZ (2016). [Household living-costs price indexes: Background.](http://archive.stats.govt.nz/browse_for_stats/economic_indicators/prices_indexes/hlpi-backgrd-paper-oct-16/hhold-living-costs-price-indexes.aspx) 
+
+Stiglitz, et al (2009). [Report by the commission on the measurement of economic performance and social progress.](http://ec.europa.eu/eurostat/documents/118025/118123/Fitoussi+Commission+report) 
+
+# Appendix A - Conceptual design of Household living-costs price indexes
+
+We calculate HLPIs by using population-group-specific expenditure patterns from the Household Economic Survey. These provide the weights for the lowest-level price indexes in the CPI basket of goods and services (the coverage of HLPIs is the same as the CPI, except for owner-occupied housing and interest payments, as described below). The basket comprises about 700 commodities and is designed to be a representative sample of consumer spending. The Household Economic Survey expenditure patterns are aligned to CPI expenditure totals, to minimise known reporting bias in the survey.
+
+### Figure A1
+
+```{r a1, fig.height=4}
+
+# A1.1 Select top-level HLPIs
+
+index_top <- subset(index,level=="All groups" & !is.na(change.a))
+
+# A1.2 Read the data from Stats NZ
+
+cpi <- read.csv(url("http://archive.stats.govt.nz/~/media/63C3DA7AB3F84496A211DA1517A3D4F7.ashx")) %>%
+            subset(Level=="All groups") %>%
+            select(Quarter,Index.number) %>%
+            mutate(quarter = as.yearqtr(Quarter)) %>%
+            select(-Quarter) %>%
+            mutate(index=Index.number/1000,
+                  change.a = index/lag(index,4)-1,
+                  series="CPI") %>%
+            select(-Index.number) %>%
+            filter(quarter >= "2009 Q2")
+
+# A1.3 Plot
+
+i2 <- ggplot(data = index_top, aes(x=as.Date(as.yearqtr(quarter)), y=change.a/100))+
+  geom_line(data=cpi, aes(y=change.a, linetype=series), colour="black")+
+  geom_line(data=subset(index_top, hlpi %in% c("allhh")), aes(colour=hlpi_name, group=hlpi_name), size=1)+
+  scale_colour_manual(values=pal1, 
+                      labels=c("All households HLPI"),
+                      name="")+
+  labs(title="HLPIs: Similar design to CPI  \n",
+       subtitle="Annual change, by household group",
+       x="", y="",
+       caption="HLPIs include mortgage interest payments, and democratic weights\nSource: Stats NZ")+
+  scale_x_date(date_labels="%Y", date_breaks="1 year")+
+  scale_linetype_manual(values="dashed", name="")+
+  theme_ab()+
+  theme(legend.position="bottom")+
+  guides(fill=guide_legend(ncol=1))+
+  scale_y_continuous(labels=percent)
+
+i2
+
+```
+
+The conceptual design of the HLPIs differs from the CPI in two important ways: HLPIs include mortgage interest payments, and democratic weights.
+
+* The treatment of owner-occupied housing and interest payments better aligns with individual household experience.
+* The aggregation method we use better reflects the inflation experienced by a ‘typical’ household within each group.
+The reasons for these variations in approach are described below. These design decisions reflect the feedback we received from the public consultation on HLPIs (Statistics NZ, 2016).
+
+## Owner-occupied housing
+The coverage of owner-occupied housing in the HLPIs includes mortgage interest payments and a link to market-value property prices. Excluding these in the CPI – which instead tracks the cost of purchasing new dwellings (excluding land) – is a design choice that aligns with the CPI’s principal use for monetary policy purposes. Given that the CPI helps the Reserve Bank set the Official Cash Rate, including interest payments in the CPI would introduce a circularity to this measure.
+
+The HLPIs include all interest payments. Interest rate changes are quality-adjusted to maintain the purchasing power of the monetary amount of debt underlying these interest payments. Mortgage debt is quality-adjusted using a market-value property price index (Quotable Value’s house price index) and other debt is quality-adjusted using the CPI (as a broad measure of inflation).
+
+This conceptual treatment of owner-occupied housing is known as a ‘payment’ approach. This approach is noted by the International Labour Organisation (ILO, 2003) as often being used, “when the primary purpose of the index is for the adjustment of compensation or income”. The 2013 CPI Advisory Committee recommended this approach for HLPIs (Statistics NZ, 2013).
+
+The payment approach tracks the price change for goods and services ‘paid for’, regardless of when they are acquired or used. In contrast, the CPI uses an ‘acquisition’ approach, reflecting price changes for goods and services when they are acquired. The main practical difference between these approaches is on the measurement of housing, interest, and insurance.
+
+The acquisition-based CPI commodity-level price indicators can be translated to a payment approach with the following modifications:
+
+* including interest payments
+* excluding net acquisition of owner-occupied housing
+* using gross expenditure weights for insurance.
+For HLPIs, under the payment approach insurance expenditure weights are on a ‘gross’ basis, based on total household spending on insurance premiums. This is in contrast to the ‘net’ basis used in the CPI, which includes only the proportion of insurance premiums that contributes to the cost of providing the insurance service (ie premiums less claims).
+
+## Aggregation method
+The aggregation method – used to combine household expenditure patterns within each household group – uses an unweighted average of the expenditure proportions for each household. This method is known as ‘democratic weighting’. It better reflects the inflation experienced by a ‘typical’ household than does the ‘plutocratic weighting’ method used for the CPI.
+
+The CPI approach, best suited to a macroeconomic indicator, involves calculating expenditure patterns from aggregate household expenditure. This latter approach means that higher expenditure households have a greater influence over the composition of the aggregate patterns.
+
+For additional information on why we chose this democratic weighting see Bentley, 2016.
+
+
+# Appendix B - Historical comparisons
+
+Housing and food typically make up a greater proportion of expenditure for poorer households. This is as true today as a century ago. In 1914, coverage of New Zealand's original household inflation indicator -- the then Retail Prices Index, now part of the CPI 100-year timeseries -- was limited to food and house-rent. This aligned with the index's original purpose, to provide impartial evidence on the cost-of-living for wage determinations by the Arbitration Court (see Bentley, 2014). Limited product coverage was justified on the grounds that food and rent covered over 50 percent of total household expenditure according to the collection of household budgets by the Labour Department in 1910–11, and coverage was considered to be even greater for households with expenditure below the average of all households (New Zealand Government, 1915): 
+
+> *…[Food and housing] become more and more important in cases where the expenditure is limited below the average. Food and shelter are the primary needs which must be satisfied before all others.* 
+
+The use and design of the CPI has evolved over time, yet the combined proportion of expenditure on food and housing, for low spending households, are similar to a century ago. Housing and food costs typically makes up 57% of spending for low spending households today, compared with 54% in 1910/11. Current expenditure proportions of 35% on housing (18% specifically on rent) and 22% on food, represent a switch in the relative importance of food and housing from a century ago.
+
+### Figure B1
+
+```{r a2, fig.height=2}
+
+# A2.1 Create historical weights dataset
+
+cat <- c("Rent","Food","Clothing","Fuel & light","Other items")
+prop <- c(20.31,34.13,13.89,5.22,26.45)
+order <- c(2,1,3,4,5)
+wgt_hist <- data.frame(cat,prop,order)
+wgt_hist$cat <- factor(wgt_hist$cat, levels=c("Rent","Food","Clothing","Fuel & light","Other items"))
+
+# A2.2 Plot
+
+h3 <- ggplot(wgt_hist,aes(factor(1),prop,fill=reorder(cat,-order)))+
+  geom_bar(aes(factor(1),prop,fill=reorder(cat,-order)),stat="identity", colour="white", width=2, alpha=.5)+
+  geom_bar(data=subset(wgt_hist, cat %in% c("Rent","Food")), aes(factor(1),prop,fill=reorder(cat,-order)),stat="identity", colour="white", width=2)+
+  theme_ab()+
+  scale_fill_manual(values=c("Rent"=pal1[1],"Food"=pal1[2],"Clothing"=pal1[3],"Fuel & light"=pal2g[1],"Other items"=pal2g[2]),
+                    guide = guide_legend(reverse=TRUE), name="Expenditure \ngroup")+
+  coord_flip()+
+  theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
+        legend.position = "bottom")+
+  geom_text(data=subset(wgt_hist, cat %in% c("Food","Rent")), aes(label = paste0(cat,"\n",round(prop,digits=0), "%")), size=4, colour="white", position = position_stack(vjust = 0.5))+
+  labs(title="Proportion of total weekly expenditure",
+       subtitle="Year: 1910/11",
+       caption="Source: Department of Labour (1912)")
+h3
+
+```
+
+\newpage
+
+# Appendix C - Definitions
+
+## Group definitions
+
+The definitions for each household-group were chosen to best meet customer needs, following a public consultation in 2015 (Stats NZ, 2016).
+
+| Group                 | Definition          |
+| ------------------------------ |:--------------------------------------------:| 
+| All households      | All private New Zealand-resident households | 
+| Beneficiary       | Households where the highest-income recipient receives a benefit payment, classified as a ‘main benefit’ in the Household Economic Survey    |   
+| Māori  | Households where at least one member has reported Māori ethnicity (as one of their ethnicities)      | 
+| Superannuitant | Households where the highest-income recipient received a New Zealand government pension |
+| Expenditure (quintiles) | Equivalised household expenditure. Five groups from low to high |
+| Income (quintiles) | Equivalised household disposable income. Five groups from low to high |
+
+## Equivalisation
+
+Equivalisation is a technique that adjusts expenditure/income information to help
+compare economic standard of living across households. The basic concept is to look
+at expenditure/income per ‘standardised’ person – each person is standardised
+according to the household they live in. Equivalisation is based on the premise that
+larger households need relatively fewer resources per person to maintain the same
+standard of living as smaller households; there are economies of scale and pooling of
+resources within larger households. 
+
+The modified OECD scale is used to define the HLPI household groups. It is a simple
+scale that is widely used internationally. The scale assigns a value of 1 to the first
+household member, 0.5 to each additional adult, and 0.3 to each child (aged under
+14 years). For example, this implies that a household of two adults and one child
+would need 1.8 times the expenditure/income as a one-adult household to obtain the
+same standard of living.
+
+Sensitivity analysis on the choice of equivalisation scale found little difference in the
+household-group inflation rates using the chosen, modified OECD scale, compared
+with the Square Root and the Jensen scales (Bentley, 2015).
+
